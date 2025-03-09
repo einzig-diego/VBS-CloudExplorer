@@ -336,13 +336,14 @@ Select Case LCase(actionNode.text)
             WScript.Echo "<tr style='background-color:" & rowColor & ";'>"
             WScript.Echo "<td style='width:20px'>&#x1F4C4;</td>" ' File icon
             Dim fileLink
-            If InStr(LCase(fileArray(i).Name), ".jpg") > 0 Or InStr(LCase(fileArray(i).Name), ".jpeg") > 0 Or InStr(LCase(fileArray(i).Name), ".png") > 0 Then
+            If InStr(LCase(fileArray(i).Name), ".jpg") > 0 Or InStr(LCase(fileArray(i).Name), ".jpeg") > 0 Or InStr(LCase(fileArray(i).Name), ".png") > 0 Or InStr(LCase(fileArray(i).Name), ".gif") > 0 Or InStr(LCase(fileArray(i).Name), ".webp") > 0 Or InStr(LCase(fileArray(i).Name), ".bmp") > 0 Or InStr(LCase(fileArray(i).Name), ".tiff") > 0 Then
                 fileLink = "explorer.vbs?action=viewimage&name=" & fileArray(i).Name & "&dir=" & dirPath
-            ElseIf InStr(LCase(fileArray(i).Name), ".mp4") > 0 Or InStr(LCase(fileArray(i).Name), ".avi") > 0 Or InStr(LCase(fileArray(i).Name), ".mov") > 0 Then
+            ElseIf InStr(LCase(fileArray(i).Name), ".mp4") > 0 Or InStr(LCase(fileArray(i).Name), ".avi") > 0 Or InStr(LCase(fileArray(i).Name), ".mov") > 0 Or InStr(LCase(fileArray(i).Name), ".webm") > 0 Or InStr(LCase(fileArray(i).Name), ".mkv") > 0 Or InStr(LCase(fileArray(i).Name), ".flv") > 0 Or InStr(LCase(fileArray(i).Name), ".wmv") > 0 Then
                 fileLink = "explorer.vbs?action=viewvideo&name=" & fileArray(i).Name & "&dir=" & dirPath
             Else
                 fileLink = "Files/" & dirPath & "/" & fileArray(i).Name
             End If
+
             WScript.Echo "<td><a href=""" & fileLink & """ style='color:#80aaff;'>" & fileArray(i).Name & "</a></td>"
             WScript.Echo "<td>" & displaySize & "</td>" ' Display file size
             WScript.Echo "<td class='actions-column'>"
@@ -373,7 +374,7 @@ Select Case LCase(actionNode.text)
         WScript.Echo ".download-button { display: inline-block; padding: 10px 20px; background-color: #33FF33; color: #121212; border: none; cursor: pointer; margin-top: 20px; margin-right: 10px; }"
         WScript.Echo ".download-button:hover { background-color: #28cc28; }"
         WScript.Echo ".back-button { display: inline-block; padding: 10px 20px; background-color: #FF3333; color: #121212; border: none; cursor: pointer; margin-top: 20px; }"
-        WScript.Echo ".back-button:hover { background-color: #28cccc; }"
+        WScript.Echo ".back-button:hover { background-color: #cc2828; }"
         WScript.Echo "</style></head><body>"
 
         ' Image display
@@ -490,12 +491,15 @@ Select Case LCase(actionNode.text)
         WScript.Echo ".menu-bar button { padding: 10px 20px; margin-right: 10px; background-color: #333333; color: #e0e0e0; border: none; cursor: pointer; border-radius: 5px; }"
         WScript.Echo ".menu-bar button:hover { background-color: #444444; }"
         WScript.Echo "#uploadFeed { margin-top: 20px; text-align: left; max-height: 150px; overflow-y: auto; font-size: 14px; border: 1px solid #444; padding: 5px; }"
+        WScript.Echo ".progress-bar { width: 100%; background-color: #444; border-radius: 5px; margin-top: 10px; }"
+        WScript.Echo ".progress { height: 20px; background-color: #4caf50; width: 0%; border-radius: 5px; }"
+        WScript.Echo ".progress-text { color: #e0e0e0; text-align: center; }"
         WScript.Echo "</style></head><body>"
         WScript.Echo "<div class='menu-bar'><button onclick='window.location.href=""explorer.vbs?action=view&dir=" & dirPath & """'>Back to Directory</button></div>"
         WScript.Echo "<div style='margin:20px auto; padding:20px; background-color: #1e1e1e; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.5); width:500px; text-align: center;'>"
         WScript.Echo "<h2>Upload Files</h2>"
         WScript.Echo "<form id='uploadForm' method='post' enctype='multipart/form-data' style='margin:20px auto; padding:20px; background-color: #1e1e1e; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.5); width:300px;'>"
-        WScript.Echo "<input type='file' id='fileInput' name='file' multiple style='margin:10px 0; display:block; width:100%;'><br>" ' Removed required
+        WScript.Echo "<input type='file' id='fileInput' name='file' multiple style='margin:10px 0; display:block; width:100%;'><br>"
         WScript.Echo "<input type='file' id='folderInput' name='folder' webkitdirectory directory style='margin:10px 0; display:block; width:100%;'><br>"
         WScript.Echo "<div style='margin-top:10px;'>"
         WScript.Echo "<button type='submit' style='display:block; width:100px; padding:10px 20px; background-color: #4caf50; color:#ffffff; border:none; cursor:pointer; border-radius:5px; margin:10px auto;'>Upload</button>"
@@ -526,10 +530,35 @@ Select Case LCase(actionNode.text)
         WScript.Echo "        entry.innerHTML = 'Uploading ' + item.name + '...';"
         WScript.Echo "        feed.appendChild(entry);"
         WScript.Echo "        feed.scrollTop = feed.scrollHeight;" ' auto-scroll to bottom
+        WScript.Echo "        var progressBar = document.createElement('div');"
+        WScript.Echo "        progressBar.className = 'progress-bar';"
+        WScript.Echo "        var progress = document.createElement('div');"
+        WScript.Echo "        progress.className = 'progress';"
+        WScript.Echo "        progressBar.appendChild(progress);"
+        WScript.Echo "        var progressText = document.createElement('div');"
+        WScript.Echo "        progressText.className = 'progress-text';"
+        WScript.Echo "        progressBar.appendChild(progressText);"
+        WScript.Echo "        entry.appendChild(progressBar);"
+        WScript.Echo "        var startTime = Date.now();"
+        WScript.Echo "        var lastLoaded = 0;"
         WScript.Echo "        var formData = new FormData();"
         WScript.Echo "        formData.append('file', item);"
         WScript.Echo "        var xhr = new XMLHttpRequest();"
         WScript.Echo "        xhr.open('POST', '/upload?filename=' + encodeURIComponent(item.name) + '&redirectto=cloudexplorer/explorer.vbs%3Faction%3Dhandleupload%26dir%3D' + encodeURIComponent(dir));"
+        WScript.Echo "        xhr.upload.addEventListener('progress', function(e) {"
+        WScript.Echo "            if (e.lengthComputable) {"
+        WScript.Echo "                var percentComplete = (e.loaded / e.total) * 100;"
+        WScript.Echo "                progress.style.width = percentComplete + '%';"
+        WScript.Echo "                progressText.innerHTML = Math.round(percentComplete) + '%';"
+        WScript.Echo "                var elapsedTime = (Date.now() - startTime) / 1000; // in seconds"
+        WScript.Echo "                var bytesUploaded = e.loaded - lastLoaded;"
+        WScript.Echo "                lastLoaded = e.loaded;"
+        WScript.Echo "                var remainingBytes = e.total - e.loaded;"
+        WScript.Echo "                var uploadedMB = (e.loaded / (1024 * 1024)).toFixed(2);"
+        WScript.Echo "                var remainingMB = (remainingBytes / (1024 * 1024)).toFixed(2);"
+        WScript.Echo "                progressText.innerHTML += ' | Uploaded: ' + uploadedMB + ' MB | Remaining: ' + remainingMB + ' MB';"
+        WScript.Echo "            }"
+        WScript.Echo "        });"
         WScript.Echo "        xhr.onreadystatechange = function() {"
         WScript.Echo "            if (xhr.readyState == 4) {"
         WScript.Echo "                if(xhr.status == 200) {"
@@ -571,7 +600,7 @@ Select Case LCase(actionNode.text)
         WScript.Echo "});"
         WScript.Echo "</script>"
         WScript.Echo "</body></html>"
-
+        
     Case "handleupload"
         ' Handle file upload and move it to the specified directory
         Set nameNode = xmlDoc.selectSingleNode("//filename")
