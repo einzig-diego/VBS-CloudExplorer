@@ -14,7 +14,7 @@ If actionNode Is Nothing Then
     WScript.Quit
 End If
 
-validActions = Array("view", "viewimage", "viewvideo", "handleupload", "createdir", "deletefile", "deletedir", "uploadfile", "checkpw")
+validActions = Array("view", "downloadfiles", "viewimage", "viewvideo", "handleupload", "createdir", "deletefile", "deletedir", "uploadfile", "checkpw")
 If Not IsInArray(actionNode.text, validActions) Then
     WScript.Echo "Invalid action specified."
     WScript.Quit
@@ -147,216 +147,446 @@ Select Case LCase(actionNode.text)
 
     Case "view"
         ' --- Sorting Logic ---
-        Dim sortBy, sortOrder, sortNode, orderNode
-        sortBy = "name" ' default sort by name
-        sortOrder = "asc" ' default ascending
-        Set sortNode = xmlDoc.selectSingleNode("//sort")
-        If Not sortNode Is Nothing Then sortBy = LCase(sortNode.text)
-        Set orderNode = xmlDoc.selectSingleNode("//order")
-        If Not orderNode Is Nothing Then sortOrder = LCase(orderNode.text)
-
+        Dim vSortBy, vSortOrder, vSortNode, vOrderNode
+        vSortBy = "name" ' default sort by name
+        vSortOrder = "asc" ' default ascending
+        Set vSortNode = xmlDoc.selectSingleNode("//sort")
+        If Not vSortNode Is Nothing Then vSortBy = LCase(vSortNode.text)
+        Set vOrderNode = xmlDoc.selectSingleNode("//order")
+        If Not vOrderNode Is Nothing Then vSortOrder = LCase(vOrderNode.text)
+        
         ' --- Build file array for sorting ---
-        Dim fileArray(), fileCount, i, j, temp, comp
-        fileCount = 0
+        Dim vFileArray(), vFileCount, vI, vJ, vTemp, vComp
+        vFileCount = 0
         For Each file In folder.Files
-            ReDim Preserve fileArray(fileCount)
-            Set fileArray(fileCount) = file
-            fileCount = fileCount + 1
+            ReDim Preserve vFileArray(vFileCount)
+            Set vFileArray(vFileCount) = file
+            vFileCount = vFileCount + 1
         Next
-
+        
         ' Bubble sort for files based on criteria
-        For i = 0 To fileCount - 2
-            For j = i + 1 To fileCount - 1
-                comp = 0
-                If sortBy = "size" Then
-                    If fileArray(i).Size > fileArray(j).Size Then comp = 1
-                    If fileArray(i).Size < fileArray(j).Size Then comp = - 1
+        For vI = 0 To vFileCount - 2
+            For vJ = vI + 1 To vFileCount - 1
+                vComp = 0
+                If vSortBy = "size" Then
+                    If vFileArray(vI).Size > vFileArray(vJ).Size Then vComp = 1
+                    If vFileArray(vI).Size < vFileArray(vJ).Size Then vComp = - 1
                 Else
-                    comp = StrComp(fileArray(i).Name, fileArray(j).Name, vbTextCompare)
+                    vComp = StrComp(vFileArray(vI).Name, vFileArray(vJ).Name, vbTextCompare)
                 End If
-                If sortOrder = "desc" Then comp = - comp
-                If comp > 0 Then
-                    Set temp = fileArray(i)
-                    Set fileArray(i) = fileArray(j)
-                    Set fileArray(j) = temp
+                If vSortOrder = "desc" Then vComp = - vComp
+                If vComp > 0 Then
+                    Set vTemp = vFileArray(vI)
+                    Set vFileArray(vI) = vFileArray(vJ)
+                    Set vFileArray(vJ) = vTemp
                 End If
             Next
         Next
-
-        ' Output HTML with a table
-        WScript.Echo "<html><head><style>"
+        
+        ' Output HTML with a table and include the file checkbox in the actions column.
+        WScript.Echo "<html><head><meta charset='UTF-8'><title>Directory View</title><style>"
         WScript.Echo "body { font-family: Arial, sans-serif; background-color: #121212; color: #e0e0e0; margin: 0; padding: 0; }"
         WScript.Echo "table { width: 100%; border-collapse: collapse; }"
-        WScript.Echo "thead { top: 0; background-color: #1e1e1e; }"
+        WScript.Echo "thead { position: sticky; top: 0; background-color: #1e1e1e; }"
         WScript.Echo "th, td { padding: 10px; border-bottom: 1px solid #333; text-align: left; }"
         WScript.Echo "tr:nth-child(even) td { background-color: #1e1e1e; }"
         WScript.Echo "tr:nth-child(odd) td { background-color: #2a2a2a; }"
         WScript.Echo "a { color: #80aaff; text-decoration: none; }"
         WScript.Echo ".menu-bar { background-color: #1e1e1e; padding: 10px; }"
-        WScript.Echo ".menu-bar button { padding: 5px 10px; margin-right: 10px; background-color: #333333; color: #e0e0e0; border: none; }"
+        WScript.Echo ".menu-bar button { padding: 5px 10px; margin-right: 10px; background-color: #333333; color: #e0e0e0; border: none; cursor: pointer; }"
         WScript.Echo ".menu-bar button:hover { background-color: #444444; }"
         WScript.Echo ".up-button { float: right; }"
-        WScript.Echo "th.actions-column, td.actions-column { width: 20px; text-align: right; }"
+        WScript.Echo "th.actions-column, td.actions-column { width: 90px; text-align: right; }"
         WScript.Echo "</style></head><body>"
-
-        ' Menu bar with additional controls
+        
+        ' Menu bar with additional controls and hidden "Download Selected" and "Delete Selected" buttons.
         WScript.Echo "<div class='menu-bar'>"
         WScript.Echo "<button onclick='createNewDirectory()'>New Directory</button>"
-        WScript.Echo "<a href=""explorer.vbs?action=uploadfile&dir=" & dirPath & """><button>Upload file to this directory</button></a>"
+        WScript.Echo "<a href=""explorer.vbs?action=uploadfile&dir=" & dirPath & """ onclick=""showPleaseWait()""><button>Upload file to this directory</button></a>"
         If dirPath <> "" Then
             WScript.Echo "<button class='up-button' onclick='goUp()'>&#x1F53C; Go Up</button>"
         End If
+        WScript.Echo "<button id='downloadButton' style='display:none;' onclick='showPleaseWait();downloadSelected()'>Download Selected</button>"
+        WScript.Echo "<button id='deleteButton' style='display:none;' onclick='showPleaseWait();deleteSelected()'>Delete Selected</button>"
         WScript.Echo "</div>"
-
-        ' JavaScript functions for directory creation, going up a directory, and deleting files/folders
+        
+        ' JavaScript functions.
         WScript.Echo "<script>"
+        ' Create New Directory
         WScript.Echo "function createNewDirectory() {"
         WScript.Echo "    var name = prompt('Enter directory name:');"
         WScript.Echo "    var dir = '" & dirPath & "';"
         WScript.Echo "    if (name) {"
+        WScript.Echo "        showPleaseWait();"
         WScript.Echo "        window.location.href = 'explorer.vbs?action=createdir&name=' + encodeURIComponent(name) + '&dir=' + encodeURIComponent(dir);"
         WScript.Echo "    }"
         WScript.Echo "}"
+        ' Go Up Directory
         WScript.Echo "function goUp() {"
         WScript.Echo "    var dir = '" & dirPath & "';"
         WScript.Echo "    var parentDir = dir.substring(0, dir.lastIndexOf('/'));"
+        WScript.Echo "    showPleaseWait();"
         WScript.Echo "    window.location.href = 'explorer.vbs?action=view&dir=' + encodeURIComponent(parentDir);"
         WScript.Echo "}"
+        ' Standard delete with Please Wait overlay.
+        WScript.Echo "function showPleaseWait() {"
+        WScript.Echo "  var overlay = document.createElement('div');"
+        WScript.Echo "  overlay.id = 'pleaseWaitOverlay';"
+        WScript.Echo "  overlay.style.position = 'fixed';"
+        WScript.Echo "  overlay.style.top = '0';"
+        WScript.Echo "  overlay.style.left = '0';"
+        WScript.Echo "  overlay.style.width = '100%';"
+        WScript.Echo "  overlay.style.height = '100%';"
+        WScript.Echo "  overlay.style.backgroundColor = 'rgba(0,0,0,0.8)';"
+        WScript.Echo "  overlay.style.display = 'flex';"
+        WScript.Echo "  overlay.style.alignItems = 'center';"
+        WScript.Echo "  overlay.style.justifyContent = 'center';"
+        WScript.Echo "  overlay.style.zIndex = '1000';"
+        WScript.Echo "  var popup = document.createElement('div');"
+        WScript.Echo "  popup.style.backgroundColor = '#333';"
+        WScript.Echo "  popup.style.color = 'white';"
+        WScript.Echo "  popup.style.padding = '20px';"
+        WScript.Echo "  popup.style.borderRadius = '5px';"
+        WScript.Echo "  popup.innerHTML = 'Please wait...';"
+        WScript.Echo "  overlay.appendChild(popup);"
+        WScript.Echo "  document.body.appendChild(overlay);"
+        WScript.Echo "}"
+        WScript.Echo "function hidePleaseWait() {"
+        WScript.Echo "  var overlay = document.getElementById('pleaseWaitOverlay');"
+        WScript.Echo "  if(overlay) { overlay.parentNode.removeChild(overlay); }"
+        WScript.Echo "}"
+        ' Existing deleteItem function remains, but used here only for single deletions.
         WScript.Echo "function deleteItem(url) {"
-        WScript.Echo "    var overlay = document.createElement('div');"
-        WScript.Echo "    overlay.style.position = 'fixed';"
-        WScript.Echo "    overlay.style.top = '0';"
-        WScript.Echo "    overlay.style.left = '0';"
-        WScript.Echo "    overlay.style.width = '100%';"
-        WScript.Echo "    overlay.style.height = '100%';"
-        WScript.Echo "    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';"
-        WScript.Echo "    overlay.style.display = 'flex';"
-        WScript.Echo "    overlay.style.alignItems = 'center';"
-        WScript.Echo "    overlay.style.justifyContent = 'center';"
-        WScript.Echo "    overlay.style.zIndex = '1000';"
-        WScript.Echo "    var popup = document.createElement('div');"
-        WScript.Echo "    popup.style.backgroundColor = '#333';"
-        WScript.Echo "    popup.style.color = 'white';"
-        WScript.Echo "    popup.style.padding = '20px';"
-        WScript.Echo "    popup.style.borderRadius = '5px';"
-        WScript.Echo "    popup.innerHTML = 'Please wait';"
-        WScript.Echo "    overlay.appendChild(popup);"
-        WScript.Echo "    document.body.appendChild(overlay);"
+        WScript.Echo "    showPleaseWait();"
         WScript.Echo "    fetch(url).then(response => {"
         WScript.Echo "        if (response.ok) {"
         WScript.Echo "            location.reload();"
         WScript.Echo "        } else {"
         WScript.Echo "            alert('Error deleting item.');"
+        WScript.Echo "            hidePleaseWait();"
         WScript.Echo "        }"
         WScript.Echo "    }).catch(error => {"
         WScript.Echo "        alert('Error deleting item: ' + error.message);"
-        WScript.Echo "    }).finally(() => {"
-        WScript.Echo "        "
+        WScript.Echo "        hidePleaseWait();"
         WScript.Echo "    });"
         WScript.Echo "}"
+        ' Function to compute ranges.
+        WScript.Echo "function computeRanges(arr) {"
+        WScript.Echo "  arr.sort(function(a, b){return a-b});"
+        WScript.Echo "  var ranges = [];"
+        WScript.Echo "  var start = arr[0], end = arr[0];"
+        WScript.Echo "  for(var i=1;i<arr.length;i++){"
+        WScript.Echo "    if(arr[i] == end+1){"
+        WScript.Echo "      end = arr[i];"
+        WScript.Echo "    } else {"
+        WScript.Echo "      ranges.push(start == end ? start.toString() : start + '-' + end);"
+        WScript.Echo "      start = arr[i]; end = arr[i];"
+        WScript.Echo "    }"
+        WScript.Echo "  }"
+        WScript.Echo "  ranges.push(start == end ? start.toString() : start + '-' + end);"
+        WScript.Echo "  return ranges.join(',');"
+        WScript.Echo "}"
+        ' Update both action buttons visibility.
+        WScript.Echo "function updateActionButtons() {"
+        WScript.Echo "  var checkboxes = document.querySelectorAll('.file-checkbox');"
+        WScript.Echo "  var anyChecked = false;"
+        WScript.Echo "  for (var i=0; i<checkboxes.length; i++) {"
+        WScript.Echo "      if(checkboxes[i].checked) { anyChecked = true; break; }"
+        WScript.Echo "  }"
+        WScript.Echo "  document.getElementById('downloadButton').style.display = anyChecked ? 'inline-block' : 'none';"
+        WScript.Echo "  document.getElementById('deleteButton').style.display = anyChecked ? 'inline-block' : 'none';"
+        WScript.Echo "}"
+        ' Function for the header checkbox.
+        WScript.Echo "function toggleSelectAll(source) {"
+        WScript.Echo "  var checkboxes = document.querySelectorAll('.file-checkbox');"
+        WScript.Echo "  for(var i=0;i<checkboxes.length;i++){"
+        WScript.Echo "      checkboxes[i].checked = source.checked;"
+        WScript.Echo "  }"
+        WScript.Echo "  updateActionButtons();"
+        WScript.Echo "}"
+        ' Download Selected: gathers indices and redirects to downloadfiles action.
+        WScript.Echo "function downloadSelected() {"
+        WScript.Echo "  var checkboxes = document.querySelectorAll('.file-checkbox');"
+        WScript.Echo "  var selected = [];"
+        WScript.Echo "  for(var i=0;i<checkboxes.length;i++){"
+        WScript.Echo "      if(checkboxes[i].checked) { selected.push(parseInt(checkboxes[i].getAttribute('data-index'))); }"
+        WScript.Echo "  }"
+        WScript.Echo "  if(selected.length === 0){ return; }"
+        WScript.Echo "  var ranges = computeRanges(selected);"
+        WScript.Echo "  var url = 'explorer.vbs?action=downloadfiles&dir=' + encodeURIComponent('" & dirPath & "') + '&files=' + encodeURIComponent(ranges);"
+        WScript.Echo "  window.location.href = url;"
+        WScript.Echo "}"
+        ' Delete Selected: gathers indices and sends delete GET requests.
+        WScript.Echo "function deleteSelected() {"
+        WScript.Echo "  var checkboxes = document.querySelectorAll('.file-checkbox');"
+        WScript.Echo "  var selected = [];"
+        WScript.Echo "  for(var i=0;i<checkboxes.length;i++){"
+        WScript.Echo "      if(checkboxes[i].checked) { selected.push(parseInt(checkboxes[i].getAttribute('data-index'))); }"
+        WScript.Echo "  }"
+        WScript.Echo "  if(selected.length === 0){ return; }"
+        WScript.Echo "  showPleaseWait();"
+        WScript.Echo "  var deletePromises = [];"
+        WScript.Echo "  for(var i=0;i<selected.length;i++){"
+        WScript.Echo "    var idx = selected[i];"
+        WScript.Echo "    var url = 'explorer.vbs?action=deletefile&dir=' + encodeURIComponent('" & dirPath & "') + '&name=' + encodeURIComponent(fileNames[idx]);"
+        WScript.Echo "    deletePromises.push(fetch(url));"
+        WScript.Echo "  }"
+        WScript.Echo "  Promise.all(deletePromises).then(function(results){"
+        WScript.Echo "      location.reload();"
+        WScript.Echo "  }).catch(function(err){"
+        WScript.Echo "      alert('Error deleting files: ' + err.message);"
+        WScript.Echo "      hidePleaseWait();"
+        WScript.Echo "  });"
+        WScript.Echo "}"
+        ' Attach updateActionButtons() to each file checkbox change event.
+        WScript.Echo "document.addEventListener('DOMContentLoaded', function(){"
+        WScript.Echo "  var checkboxes = document.querySelectorAll('.file-checkbox');"
+        WScript.Echo "  for(var i=0;i<checkboxes.length;i++){"
+        WScript.Echo "      checkboxes[i].addEventListener('change', updateActionButtons);"
+        WScript.Echo "  }"
+        WScript.Echo "});"
+        ' Provide an array of file names from the sorted file list.
+        WScript.Echo "var fileNames = ["
+        For vI = 0 To vFileCount - 1
+            WScript.Echo "  '" & Replace(vFileArray(vI).Name, "'", "\'") & "',"
+        Next
+        WScript.Echo "];"
+        WScript.Echo "var dirPath = '" & dirPath & "';"
         WScript.Echo "</script>"
-
-        ' Begin table output
+        
+        ' Begin table output.
         WScript.Echo "<table>"
         WScript.Echo "<thead>"
-        ' First row: integrated filter (sort) options spanning all columns
+        ' First row: sort options.
         WScript.Echo "<tr>"
         WScript.Echo "<th colspan='4' style='text-align:left;'>"
         WScript.Echo "Sort Files: "
-        WScript.Echo "<a href='explorer.vbs?action=view&dir=" & dirPath & "&sort=name&order=asc'>Name &uarr;</a> "
-        WScript.Echo "<a href='explorer.vbs?action=view&dir=" & dirPath & "&sort=name&order=desc'>Name &darr;</a> "
-        WScript.Echo "<a href='explorer.vbs?action=view&dir=" & dirPath & "&sort=size&order=asc'>Size &uarr;</a> "
-        WScript.Echo "<a href='explorer.vbs?action=view&dir=" & dirPath & "&sort=size&order=desc'>Size &darr;</a>"
+        WScript.Echo "<a onclick=""showPleaseWait()"" href='explorer.vbs?action=view&dir=" & dirPath & "&sort=name&order=asc'>Name &uarr;</a> "
+        WScript.Echo "<a onclick=""showPleaseWait()"" href='explorer.vbs?action=view&dir=" & dirPath & "&sort=name&order=desc'>Name &darr;</a> "
+        WScript.Echo "<a onclick=""showPleaseWait()"" href='explorer.vbs?action=view&dir=" & dirPath & "&sort=size&order=asc'>Size &uarr;</a> "
+        WScript.Echo "<a onclick=""showPleaseWait()"" href='explorer.vbs?action=view&dir=" & dirPath & "&sort=size&order=desc'>Size &darr;</a>"
         WScript.Echo "</th>"
         WScript.Echo "</tr>"
-        ' Second row: column headers
+        ' Second row: headers (with header checkbox in the Actions column).
         WScript.Echo "<tr>"
         WScript.Echo "<th>Type</th>"
         WScript.Echo "<th>Name</th>"
         WScript.Echo "<th>Size</th>"
-        WScript.Echo "<th>Actions</th>"
+        WScript.Echo "<th>Actions <input type='checkbox' onclick='toggleSelectAll(this)' title='Select/Deselect all files'></th>"
         WScript.Echo "</tr>"
         WScript.Echo "</thead>"
         WScript.Echo "<tbody>"
-
-        rowNum = 0 ' Initialize rowNum
-
-        ' List subfolders first (unsorted)
+        
+        Dim vRowNum, vRowColor, vFolderSize, vItemCount, vDisplaySize
+        vRowNum = 0 ' Initialize rowNum
+        
+        ' List subfolders (unsorted).
         For Each subfolder In folder.SubFolders
-            rowColor = GetRowColor(rowNum)
-
-            ' Calculate folder size and item count recursively
-            folderSize = 0
-            itemCount = 0
+            vRowColor = GetRowColor(vRowNum)
+            vFolderSize = 0
+            vItemCount = 0
             For Each subfolderIn In subfolder.SubFolders
-                itemCount = itemCount + 1
+                vItemCount = vItemCount + 1
                 For Each fileIn In subfolderIn.Files
-                    folderSize = folderSize + fileIn.Size
-                    itemCount = itemCount + 1
+                    vFolderSize = vFolderSize + fileIn.Size
+                    vItemCount = vItemCount + 1
                 Next
             Next
             For Each file In subfolder.Files
-                folderSize = folderSize + file.Size
-                itemCount = itemCount + 1
+                vFolderSize = vFolderSize + file.Size
+                vItemCount = vItemCount + 1
             Next
-            
-            ' Convert size to appropriate unit
-            If folderSize < 1048576 Then ' Less than 1 MB
-                displaySize = Round(folderSize / 1024, 2) & " KB"
-            ElseIf folderSize < 1073741824 Then ' Less than 1 GB
-                displaySize = Round(folderSize / 1048576, 2) & " MB"
+            If vFolderSize < 1048576 Then
+                vDisplaySize = Round(vFolderSize / 1024, 2) & " KB"
+            ElseIf vFolderSize < 1073741824 Then
+                vDisplaySize = Round(vFolderSize / 1048576, 2) & " MB"
             Else
-                displaySize = Round(folderSize / 1073741824, 2) & " GB"
+                vDisplaySize = Round(vFolderSize / 1073741824, 2) & " GB"
             End If
-            
-            WScript.Echo "<tr style='background-color:" & rowColor & ";'>"
-            WScript.Echo "<td style='width:20px'>&#x1F4C1;</td>" ' Folder icon
-            WScript.Echo "<td><a href=""explorer.vbs?action=view&dir=" & dirPath & "/" & subfolder.Name & """ style='color:#80aaff;'>" & subfolder.Name & "</a></td>"
-            WScript.Echo "<td>" & displaySize & " (" & itemCount & " items)</td>" ' Display size with item count
-            WScript.Echo "<td class='actions-column'><a href='#' onclick=""deleteItem('explorer.vbs?action=deletedir&name=" & subfolder.Name & "&dir=" & dirPath & "'); return false;"" style='color:#ff6666;'>&#x1F5D1;</a></td>"
-            WScript.Echo "</tr>"
-            rowNum = rowNum + 1
-        Next
-        
-        ' List files with file size (sorted)
-        For i = 0 To fileCount - 1
-            rowColor = GetRowColor(rowNum)
-            Dim fSize, displaySize
-            fSize = fileArray(i).Size
-
-            ' Convert size to appropriate unit
-            If fSize < 1048576 Then ' Less than 1 MB
-                displaySize = Round(fSize / 1024, 2) & " KB"
-            ElseIf fSize < 1073741824 Then ' Less than 1 GB
-                displaySize = Round(fSize / 1048576, 2) & " MB"
-            Else
-                displaySize = Round(fSize / 1073741824, 2) & " GB"
-            End If
-            
-            WScript.Echo "<tr style='background-color:" & rowColor & ";'>"
-            WScript.Echo "<td style='width:20px'>&#x1F4C4;</td>" ' File icon
-            Dim fileLink
-            If InStr(LCase(fileArray(i).Name), ".jpg") > 0 Or InStr(LCase(fileArray(i).Name), ".jpeg") > 0 Or InStr(LCase(fileArray(i).Name), ".png") > 0 Or InStr(LCase(fileArray(i).Name), ".gif") > 0 Or InStr(LCase(fileArray(i).Name), ".webp") > 0 Or InStr(LCase(fileArray(i).Name), ".bmp") > 0 Or InStr(LCase(fileArray(i).Name), ".tiff") > 0 Then
-                fileLink = "explorer.vbs?action=viewimage&name=" & fileArray(i).Name & "&dir=" & dirPath
-            ElseIf InStr(LCase(fileArray(i).Name), ".mp4") > 0 Or InStr(LCase(fileArray(i).Name), ".avi") > 0 Or InStr(LCase(fileArray(i).Name), ".mov") > 0 Or InStr(LCase(fileArray(i).Name), ".webm") > 0 Or InStr(LCase(fileArray(i).Name), ".mkv") > 0 Or InStr(LCase(fileArray(i).Name), ".flv") > 0 Or InStr(LCase(fileArray(i).Name), ".wmv") > 0 Then
-                fileLink = "explorer.vbs?action=viewvideo&name=" & fileArray(i).Name & "&dir=" & dirPath
-            Else
-                fileLink = "Files/" & dirPath & "/" & fileArray(i).Name
-            End If
-
-            WScript.Echo "<td><a href=""" & fileLink & """ style='color:#80aaff;'>" & fileArray(i).Name & "</a></td>"
-            WScript.Echo "<td>" & displaySize & "</td>" ' Display file size
+            WScript.Echo "<tr style='background-color:" & vRowColor & ";'>"
+            WScript.Echo "<td style='width:20px'>&#x1F4C1;</td>"
+            WScript.Echo "<td><a onclick=""showPleaseWait()"" href=""explorer.vbs?action=view&dir=" & dirPath & "/" & subfolder.Name & """ style='color:#80aaff;'>" & subfolder.Name & "</a></td>"
+            WScript.Echo "<td>" & vDisplaySize & " (" & vItemCount & " items)</td>"
             WScript.Echo "<td class='actions-column'>"
-            WScript.Echo "  <a href='#' onclick=""deleteItem('explorer.vbs?action=deletefile&name=" & fileArray(i).Name & "&dir=" & dirPath & "'); return false;"" style='color:#ff6666;'>&#x1F5D1;</a> "
-            WScript.Echo "  <a href='#' onclick=""navigator.clipboard.writeText(window.location.hostname+'/CloudExplorer/Files/" & dirPath & "/" & fileArray(i).Name & "'); return false;"" title='Share' style='color:#80aaff;'>&#x1F517;</a>"
+            WScript.Echo "<a href='#' onclick=""showPleaseWait();deleteItem('explorer.vbs?action=deletedir&name=" & subfolder.Name & "&dir=" & dirPath & "'); return false;"" style='color:#ff6666;'>&#x1F5D1;</a>"
             WScript.Echo "</td>"
             WScript.Echo "</tr>"
-            rowNum = rowNum + 1
+            vRowNum = vRowNum + 1
         Next
-
+        
+        ' List files (sorted) – with download/delete checkbox in the actions column.
+        For vI = 0 To vFileCount - 1
+            vRowColor = GetRowColor(vRowNum)
+            Dim vFSize, vFileLink
+            vFSize = vFileArray(vI).Size
+            If vFSize < 1048576 Then
+                vDisplaySize = Round(vFSize / 1024, 2) & " KB"
+            ElseIf vFSize < 1073741824 Then
+                vDisplaySize = Round(vFSize / 1048576, 2) & " MB"
+            Else
+                vDisplaySize = Round(vFSize / 1073741824, 2) & " GB"
+            End If
+            WScript.Echo "<tr style='background-color:" & vRowColor & ";'>"
+            WScript.Echo "<td style='width:20px'>&#x1F4C4;</td>"
+            ' Determine file link based on file type.
+            If InStr(LCase(vFileArray(vI).Name), ".jpg") > 0 Or InStr(LCase(vFileArray(vI).Name), ".jpeg") > 0 Or InStr(LCase(vFileArray(vI).Name), ".png") > 0 Or InStr(LCase(vFileArray(vI).Name), ".gif") > 0 Or InStr(LCase(vFileArray(vI).Name), ".webp") > 0 Or InStr(LCase(vFileArray(vI).Name), ".bmp") > 0 Or InStr(LCase(vFileArray(vI).Name), ".tiff") > 0 Then
+                vFileLink = "explorer.vbs?action=viewimage&name=" & vFileArray(vI).Name & "&dir=" & dirPath
+            ElseIf InStr(LCase(vFileArray(vI).Name), ".mp4") > 0 Or InStr(LCase(vFileArray(vI).Name), ".avi") > 0 Or InStr(LCase(vFileArray(vI).Name), ".mov") > 0 Or InStr(LCase(vFileArray(vI).Name), ".webm") > 0 Or InStr(LCase(vFileArray(vI).Name), ".mkv") > 0 Or InStr(LCase(vFileArray(vI).Name), ".flv") > 0 Or InStr(LCase(vFileArray(vI).Name), ".wmv") > 0 Then
+                vFileLink = "explorer.vbs?action=viewvideo&name=" & vFileArray(vI).Name & "&dir=" & dirPath
+            Else
+                vFileLink = "Files/" & dirPath & "/" & vFileArray(vI).Name
+            End If
+            WScript.Echo "<td><a onclick=""showPleaseWait()"" href=""" & vFileLink & """ style='color:#80aaff;'>" & vFileArray(vI).Name & "</a></td>"
+            WScript.Echo "<td>" & vDisplaySize & "</td>"
+            ' In the actions column, include delete/share links AND the file checkbox.
+            WScript.Echo "<td class='actions-column'>"
+            WScript.Echo "<a href='#' onclick=""showPleaseWait();deleteItem('explorer.vbs?action=deletefile&name=" & vFileArray(vI).Name & "&dir=" & dirPath & "'); return false;"" style='color:#ff6666;'>&#x1F5D1;</a> "
+            WScript.Echo "<a href='#' onclick=""navigator.clipboard.writeText(window.location.hostname+'/CloudExplorer/Files/" & dirPath & "/" & vFileArray(vI).Name & "'); return false;"" title='Share' style='color:#80aaff;'>&#x1F517;</a> "
+            WScript.Echo "<input type='checkbox' class='file-checkbox' data-index='" & vI & "' onclick='updateActionButtons()'>"
+            WScript.Echo "</td>"
+            WScript.Echo "</tr>"
+            vRowNum = vRowNum + 1
+        Next
+        
         WScript.Echo "</tbody></table>"
         WScript.Echo "</body></html>"
+
+    Case "downloadfiles"
+        ' Retrieve the file ranges string from the XML
+        Dim dFilesNode, dFilesParam, dSelectedIndices, dIndices, dToken, dParts, dK, dSelCount
+        Set dFilesNode = xmlDoc.selectSingleNode("//files")
+        If dFilesNode Is Nothing Then
+            DisplayError "No <files> node provided."
+            WScript.Quit
+        End If
+        dFilesParam = dFilesNode.text ' e.g. "0-2,4,6-8"
+
+        ' Build an array of individual indices from the range string
+        dSelectedIndices = Array()
+        dIndices = Split(dFilesParam, ",")
+        dSelCount = 0
+        For dK = 0 To UBound(dIndices)
+            dToken = Trim(dIndices(dK))
+            If InStr(dToken, "-") > 0 Then
+                dParts = Split(dToken, "-")
+                Dim dStartIdx, dEndIdx, dZ
+                dStartIdx = CInt(dParts(0))
+                dEndIdx = CInt(dParts(1))
+                For dZ = dStartIdx To dEndIdx
+                    ReDim Preserve dSelectedIndices(dSelCount)
+                    dSelectedIndices(dSelCount) = dZ
+                    dSelCount = dSelCount + 1
+                Next
+            Else
+                ReDim Preserve dSelectedIndices(dSelCount)
+                dSelectedIndices(dSelCount) = CInt(dToken)
+                dSelCount = dSelCount + 1
+            End If
+        Next
+
+        ' Rebuild the sorted file list
+        Dim dAllFiles(), dFileCount2, dF, dM
+        dFileCount2 = 0
+        For Each dF In folder.Files
+            ReDim Preserve dAllFiles(dFileCount2)
+            Set dAllFiles(dFileCount2) = dF
+            dFileCount2 = dFileCount2 + 1
+        Next
+
+        ' Sort files by name (Bubble Sort)
+        For dM = 0 To dFileCount2 - 2
+            For dJ = dM + 1 To dFileCount2 - 1
+                If StrComp(dAllFiles(dM).Name, dAllFiles(dJ).Name, vbTextCompare) > 0 Then
+                    Set dTemp = dAllFiles(dM)
+                    Set dAllFiles(dM) = dAllFiles(dJ)
+                    Set dAllFiles(dJ) = dTemp
+                End If
+            Next
+        Next
+
+        ' Gather the files to be downloaded
+        Dim dFilesToDownload(), dCountDownload, dIdx
+        dCountDownload = 0
+        For dM = 0 To UBound(dSelectedIndices)
+            dIdx = dSelectedIndices(dM)
+            If dIdx >= 0 And dIdx < dFileCount2 Then
+                ReDim Preserve dFilesToDownload(dCountDownload)
+                Set dFilesToDownload(dCountDownload) = dAllFiles(dIdx)
+                dCountDownload = dCountDownload + 1
+            End If
+        Next
+
+        ' Output an HTML page with progress indication
+        WScript.Echo "<html><head><meta charset='UTF-8'><title>Downloading Files</title>"
+        WScript.Echo "<style>"
+        WScript.Echo "body { font-family: Arial, sans-serif; background-color: #121212; color: #e0e0e0; padding: 20px; }"
+        WScript.Echo ".menu-bar { background-color: #1e1e1e; color: #e0e0e0; padding: 10px; text-align: center; }"
+        WScript.Echo ".menu-bar button { padding: 10px 20px; margin-right: 10px; background-color: #333333; color: #e0e0e0; border: none; cursor: pointer; border-radius: 5px; }"
+        WScript.Echo ".menu-bar button:hover { background-color: #444444; }"
+        WScript.Echo "#downloadFeed { max-height: 150px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #1e1e1e; }"
+        WScript.Echo ".progress-bar { width: 100%; background-color: #444; border-radius: 5px; margin-top: 10px; }"
+        WScript.Echo ".progress { height: 20px; background-color: #4caf50; width: 0%; border-radius: 5px; }"
+        WScript.Echo ".progress-text { text-align: center; margin-top: 5px; }"
+        WScript.Echo "</style></head><body>"
+
+        WScript.Echo "<div class='menu-bar'>"
+        WScript.Echo "<button onclick='window.location.href=""explorer.vbs?action=view&dir=" & dirPath & """'>Back to Directory</button>"
+        WScript.Echo "</div>"
+        WScript.Echo "<h2>Downloading Files</h2>"
+        WScript.Echo "<p>Downloads will start automatically. Progress will be shown below:</p>"
+
+        ' Progress bar container
+        WScript.Echo "<div class='progress-bar'><div class='progress' id='progressBar'></div></div>"
+        WScript.Echo "<div class='progress-text' id='progressText'>0%</div>"
+
+        ' Download log box
+        WScript.Echo "<div id='downloadFeed'></div>"
+
+        WScript.Echo "<script>"
         
+        ' JavaScript functions for handling progress
+        WScript.Echo "var files = ["
+        For dM = 0 To UBound(dFilesToDownload)
+            dFileURL = "Files/" & dirPath & "/" & dFilesToDownload(dM).Name
+            WScript.Echo "'" & dFileURL & "',"
+        Next
+        WScript.Echo "];"
+
+        WScript.Echo "var totalFiles = files.length, downloadedFiles = 0;"
+        WScript.Echo "function downloadNext(index) {"
+        WScript.Echo "    if (index >= files.length) {"
+        WScript.Echo "        document.getElementById('progressText').innerHTML = 'Download Complete';"
+        WScript.Echo "        return;"
+        WScript.Echo "    }"
+        WScript.Echo "    var fileURL = files[index];"
+        WScript.Echo "    var iframe = document.createElement('iframe');"
+        WScript.Echo "    iframe.style.display = 'none';"
+        WScript.Echo "    iframe.src = fileURL;"
+        WScript.Echo "    document.body.appendChild(iframe);"
+
+        ' Append download status to the scroll box
+        WScript.Echo "    var feed = document.getElementById('downloadFeed');"
+        WScript.Echo "    var entry = document.createElement('div');"
+        WScript.Echo "    entry.innerHTML = 'Downloading: ' + fileURL.split('/').pop();"
+        WScript.Echo "    feed.appendChild(entry);"
+        WScript.Echo "    feed.scrollTop = feed.scrollHeight;"
+
+        ' Update progress bar
+        WScript.Echo "    downloadedFiles++;"
+        WScript.Echo "    var progress = Math.round((downloadedFiles / totalFiles) * 100);"
+        WScript.Echo "    document.getElementById('progressBar').style.width = progress + '%';"
+        WScript.Echo "    document.getElementById('progressText').innerHTML = progress + '%';"
+
+        ' Move to the next file after a short delay
+        WScript.Echo "    setTimeout(function() { downloadNext(index + 1); }, 800);"
+        WScript.Echo "}"
+
+        WScript.Echo "downloadNext(0);" ' Start the downloads
+        WScript.Echo "</script>"
+
+        WScript.Echo "</body></html>"
+        WScript.Quit
+
     Case "viewimage"
         Dim fileName, filePath
         Set nameNode = xmlDoc.selectSingleNode("//name")
@@ -495,7 +725,7 @@ Select Case LCase(actionNode.text)
         WScript.Echo ".progress { height: 20px; background-color: #4caf50; width: 0%; border-radius: 5px; }"
         WScript.Echo ".progress-text { color: #e0e0e0; text-align: center; }"
         WScript.Echo "</style></head><body>"
-        WScript.Echo "<div class='menu-bar'><button onclick='window.location.href=""explorer.vbs?action=view&dir=" & dirPath & """'>Back to Directory</button></div>"
+        ' WScript.Echo "<div class='menu-bar'><button onclick='showPleaseWait();window.location.href=""explorer.vbs?action=view&dir=" & dirPath & """'>Back to Directory</button></div>"
         WScript.Echo "<div style='margin:20px auto; padding:20px; background-color: #1e1e1e; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.5); width:500px; text-align: center;'>"
         WScript.Echo "<h2>Upload Files</h2>"
         WScript.Echo "<form id='uploadForm' method='post' enctype='multipart/form-data' style='margin:20px auto; padding:20px; background-color: #1e1e1e; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.5); width:300px;'>"
@@ -510,6 +740,29 @@ Select Case LCase(actionNode.text)
         WScript.Echo "<div id='uploadFeed'></div>"
         WScript.Echo "</div>"
         WScript.Echo "<script>"
+        ' Standard delete with Please Wait overlay.
+        WScript.Echo "function showPleaseWait() {"
+        WScript.Echo "  var overlay = document.createElement('div');"
+        WScript.Echo "  overlay.id = 'pleaseWaitOverlay';"
+        WScript.Echo "  overlay.style.position = 'fixed';"
+        WScript.Echo "  overlay.style.top = '0';"
+        WScript.Echo "  overlay.style.left = '0';"
+        WScript.Echo "  overlay.style.width = '100%';"
+        WScript.Echo "  overlay.style.height = '100%';"
+        WScript.Echo "  overlay.style.backgroundColor = 'rgba(0,0,0,0.8)';"
+        WScript.Echo "  overlay.style.display = 'flex';"
+        WScript.Echo "  overlay.style.alignItems = 'center';"
+        WScript.Echo "  overlay.style.justifyContent = 'center';"
+        WScript.Echo "  overlay.style.zIndex = '1000';"
+        WScript.Echo "  var popup = document.createElement('div');"
+        WScript.Echo "  popup.style.backgroundColor = '#333';"
+        WScript.Echo "  popup.style.color = 'white';"
+        WScript.Echo "  popup.style.padding = '20px';"
+        WScript.Echo "  popup.style.borderRadius = '5px';"
+        WScript.Echo "  popup.innerHTML = 'Please wait...';"
+        WScript.Echo "  overlay.appendChild(popup);"
+        WScript.Echo "  document.body.appendChild(overlay);"
+        WScript.Echo "}"
         WScript.Echo "document.getElementById('uploadForm').addEventListener('submit', function(event) {"
         WScript.Echo "    event.preventDefault();"
         WScript.Echo "    var fileInput = document.getElementById('fileInput');"
